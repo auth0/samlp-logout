@@ -1,10 +1,9 @@
 {
   "name": "samlp-logout",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Federated SAMLP single-sign out",
   "main": "index.js",
-  "scripts": {
-  },
+  "scripts": {},
   "author": "",
   "license": "MIT",
   "dependencies": {
