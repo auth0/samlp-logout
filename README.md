@@ -1,4 +1,4 @@
-Federated single-sign out for SAMLP providers from express.js applications.
+Federated single sign-out for SAMLP providers from express.js applications.
 
 ## Installation
 

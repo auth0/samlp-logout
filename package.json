@@ -1,7 +1,7 @@
 {
   "name": "samlp-logout",
   "version": "0.1.0",
-  "description": "Federated SAMLP single-sign out",
+  "description": "Federated SAMLP single sign-out",
   "main": "index.js",
   "scripts": {},
   "author": "",
