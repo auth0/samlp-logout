@@ -1,13 +1,8 @@
 var templates = require('./templates');
 var zlib = require('zlib');
 var url = require('url');
-
-function trimXML (xml) {
-  return xml.replace(/\r\n/g, '')
-      .replace(/\n/g,'')
-      .replace(/>(\s*)</g, '><') //unindent
-      .trim();
-}
+var trim_xml = require('./lib/trim_xml');
+var sign_xml = require('./lib/sign_xml');
 
 function generateUniqueID() {
   var chars = "abcdef0123456789";
@@ -40,8 +35,22 @@ function buildUrl(identityProviderUrl, buffer, relayState) {
 }
 
 module.exports = function (options) {
-  return function (req, res, next) {
 
+  function redirect(req, res, next, samlrequest) {
+    if (!options.deflate) {
+      return res.redirect(buildUrl(options.identityProviderUrl,
+                                   new Buffer(samlrequest),
+                                   options.relayState));
+    }
+
+    //we compress with deflate
+    zlib.deflateRaw(samlrequest, function(err, buffer) {
+      if (err) return next(err);
+      res.redirect(buildUrl(options.identityProviderUrl, buffer, options.relayState));
+    });
+  }
+
+  return function (req, res, next) {
     var logoutRequest = templates.LogoutRequest({
       ID: generateUniqueID(),
       IssueInstant: getRoundTripDateFormat(),
@@ -51,17 +60,13 @@ module.exports = function (options) {
       Destination: options.identityProviderUrl
     });
 
-    console.log(logoutRequest);
+    var canonicalRequest = trim_xml(logoutRequest);
 
-    var logoutRequestBuffer = new Buffer(trimXML(logoutRequest));
-
-    if (!options.deflate) {
-      return res.redirect(buildUrl(options.identityProviderUrl, logoutRequestBuffer, options.relayState));
+    if (options.cert && options.key) {
+      var signedRequest = sign_xml(options, canonicalRequest);
+      redirect(req, res, next, signedRequest);
+    } else {
+      redirect(req, res, next, canonicalRequest);
     }
-
-    zlib.deflateRaw(logoutRequestBuffer, function(err, buffer) {
-      if (err) return next(err);
-      res.redirect(buildUrl(options.identityProviderUrl, buffer, options.relayState));
-    });
   };
 };
