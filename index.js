@@ -4,6 +4,9 @@ var url = require('url');
 var trim_xml = require('./lib/trim_xml');
 var sign_xml = require('./lib/sign_xml');
 
+var xmldom = require('xmldom');
+var DOMParser = xmldom.DOMParser;
+
 function generateUniqueID() {
   var chars = "abcdef0123456789";
   var uniqueID = "";
@@ -69,4 +72,15 @@ module.exports = function (options) {
       redirect(req, res, next, canonicalRequest);
     }
   };
+};
+
+module.exports.parseResponse = function (samlResponse, callback) {
+  zlib.inflateRaw(new Buffer(samlResponse, 'base64'), function (err, buffer) {
+    if (err) return callback(err);
+    var xml = new DOMParser().parseFromString(buffer.toString());
+    var status = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusCode')[0]
+                    .getAttribute('Value');
+
+    callback(null, { status: status });
+  });
 };
