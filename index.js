@@ -55,7 +55,7 @@ module.exports = function (options) {
       ID: generateUniqueID(),
       IssueInstant: getRoundTripDateFormat(),
       Issuer: options.issuer,
-      NameID: req.samlNameID,
+      NameID: typeof req.samlNameID === 'string' ? { value: req.samlNameID } : req.samlNameID,
       SessionIndex: req.samlSessionIndex,
       Destination: options.identityProviderUrl
     });

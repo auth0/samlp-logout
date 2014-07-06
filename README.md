@@ -17,7 +17,13 @@ var logout = SamlpLogout({
 });
 
 //assuming we have req.samlNameID
-app.get('/logout', logout);
+app.get('/logout', function (req, res, next) {
+  req.samlNameID = {
+    value: 'xyz',
+    Format: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'
+  };
+  next();
+}, logout);
 ```
 
 ## License
