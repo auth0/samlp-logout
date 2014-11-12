@@ -66,7 +66,14 @@ module.exports = function (options) {
     var canonicalRequest = trim_xml(logoutRequest);
 
     if (options.cert && options.key) {
-      var signedRequest = sign_xml(options, canonicalRequest);
+      var signedRequest;
+
+      try {
+        signedRequest = sign_xml(options, canonicalRequest);
+      } catch (err) {
+        return next(err);
+      }
+
       redirect(req, res, next, signedRequest);
     } else {
       redirect(req, res, next, canonicalRequest);
