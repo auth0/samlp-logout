@@ -1,10 +1,9 @@
+var zlib      = require('zlib');
+var url       = require('url');
+var xmldom    = require('xmldom');
 var templates = require('./templates');
-var zlib = require('zlib');
-var url = require('url');
-var trim_xml = require('./lib/trim_xml');
-var sign_xml = require('./lib/sign_xml');
-
-var xmldom = require('xmldom');
+var trim_xml  = require('./lib/trim_xml');
+var sign_xml  = require('./lib/sign_xml');
 var DOMParser = xmldom.DOMParser;
 
 function generateUniqueID() {
@@ -31,26 +30,28 @@ function buildUrl(identityProviderUrl, buffer, relayState) {
   var parsed = url.parse(identityProviderUrl, true);
   delete parsed.search;
   parsed.query.SAMLRequest = buffer.toString('base64');
+  
   if (relayState) {
     parsed.query.RelayState = relayState;
   }
+  
   return url.format(parsed);
 }
 
 module.exports = function (options) {
 
-  function redirect(req, res, next, samlrequest) {
-    if (!options.deflate) {
-      return res.redirect(buildUrl(options.identityProviderUrl,
-                                   new Buffer(samlrequest),
-                                   options.relayState));
+  function sendRequest(req, res, next, samlrequest) {
+    if (options.protocolBinding === 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST') {
+      res.set('Content-Type', 'text/html');
+      return res.send(templates.Form({
+        callback:     options.identityProviderUrl,
+        RelayState:   options.relayState || '',
+        SAMLRequest:  samlrequest.toString('base64')
+      }));
     }
 
-    //we compress with deflate
-    zlib.deflateRaw(samlrequest, function(err, buffer) {
-      if (err) return next(err);
-      res.redirect(buildUrl(options.identityProviderUrl, buffer, options.relayState));
-    });
+    // HTTP-Redirect
+    res.redirect(buildUrl(options.identityProviderUrl, samlrequest, options.relayState));
   }
 
   return function (req, res, next) {
@@ -63,20 +64,26 @@ module.exports = function (options) {
       Destination: options.identityProviderUrl
     });
 
-    var canonicalRequest = trim_xml(logoutRequest);
+    // canonical request
+    logoutRequest = trim_xml(logoutRequest);
 
     if (options.cert && options.key) {
-      var signedRequest;
-
       try {
-        signedRequest = sign_xml(options, canonicalRequest);
+        // signed request
+        logoutRequest = sign_xml(options, logoutRequest);
       } catch (err) {
         return next(err);
       }
+    }
 
-      redirect(req, res, next, signedRequest);
+    if (options.deflate) {
+      // we compress with deflate
+      zlib.deflateRaw(logoutRequest, function (err, buffer) {
+        if (err) return next(err);
+        sendRequest(req, res, next, buffer);
+      });
     } else {
-      redirect(req, res, next, canonicalRequest);
+      sendRequest(req, res, next, new Buffer(logoutRequest));
     }
   };
 };
