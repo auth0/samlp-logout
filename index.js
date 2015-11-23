@@ -92,9 +92,33 @@ module.exports.parseResponse = function (samlResponse, callback) {
   zlib.inflateRaw(new Buffer(samlResponse, 'base64'), function (err, buffer) {
     if (err) return callback(err);
     var xml = new DOMParser().parseFromString(buffer.toString());
-    var status = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusCode')[0]
-                    .getAttribute('Value');
+    var parsedResponse = {};
 
-    callback(null, { status: status });
+    // status code
+    var statusCodes = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusCode');
+    var statusCodeXml = statusCodes[0];
+    if (statusCodeXml) {
+      parsedResponse.status = statusCodeXml.getAttribute('Value');
+
+      // status sub code
+      var statusSubCodeXml = statusCodes[1];
+      if (statusSubCodeXml) {
+        parsedResponse.subCode = statusSubCodeXml.getAttribute('Value');
+      }
+    }
+
+    // status message
+    var samlStatusMsgXml = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusMessage')[0];
+    if (samlStatusMsgXml) {
+      parsedResponse.message = samlStatusMsgXml.textContent;
+    }
+
+    // status detail
+    var samlStatusDetailXml = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusDetail')[0];
+    if (samlStatusDetailXml) {
+      parsedResponse.detail = samlStatusDetailXml.textContent;
+    }
+
+    callback(null, parsedResponse);
   });
 };
