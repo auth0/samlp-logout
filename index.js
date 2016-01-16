@@ -1,10 +1,17 @@
 var zlib      = require('zlib');
 var url       = require('url');
 var xmldom    = require('xmldom');
+var qs        = require('querystring');
+var xtend     = require('xtend');
 var templates = require('./templates');
 var trim_xml  = require('./lib/trim_xml');
-var sign_xml  = require('./lib/sign_xml');
+var signers   = require('./lib/signers');
 var DOMParser = xmldom.DOMParser;
+
+var BINDINGS = {
+  HTTP_POST:      'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST',
+  HTTP_REDIRECT:  'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect'
+};
 
 function generateUniqueID() {
   var chars = "abcdef0123456789";
@@ -26,35 +33,33 @@ function getRoundTripDateFormat() {
         ('0' + date.getUTCSeconds()).slice(-2) + "Z";
 }
 
-function buildUrl(identityProviderUrl, buffer, relayState) {
-  var parsed = url.parse(identityProviderUrl, true);
+function appendQueryString(initialUrl, query) {
+  var parsed = url.parse(initialUrl, true);
+  parsed.query = xtend(parsed.query, query);
   delete parsed.search;
-  parsed.query.SAMLRequest = buffer.toString('base64');
-  
-  if (relayState) {
-    parsed.query.RelayState = relayState;
-  }
-  
   return url.format(parsed);
 }
 
 module.exports = function (options) {
 
-  function sendRequest(req, res, next, samlrequest) {
-    if (options.protocolBinding === 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST') {
+  function sendRequest(req, res, next, params) {
+    if (options.protocolBinding === BINDINGS.HTTP_POST) {
+      // HTTP-POST
       res.set('Content-Type', 'text/html');
       return res.send(templates.Form({
         callback:     options.identityProviderUrl,
-        RelayState:   options.relayState || '',
-        SAMLRequest:  samlrequest.toString('base64')
+        RelayState:   params.RelayState,
+        SAMLRequest:  params.SAMLRequest
       }));
     }
 
     // HTTP-Redirect
-    res.redirect(buildUrl(options.identityProviderUrl, samlrequest, options.relayState));
+    var samlRequestUrl = appendQueryString(options.identityProviderUrl, params);
+    res.redirect(samlRequestUrl);
   }
 
   return function (req, res, next) {
+    var signRequest = !!(options.cert && options.key);
     var logoutRequest = templates.LogoutRequest({
       ID: generateUniqueID(),
       IssueInstant: getRoundTripDateFormat(),
@@ -64,27 +69,48 @@ module.exports = function (options) {
       Destination: options.identityProviderUrl
     });
 
+    var params = {
+      SAMLRequest: null,
+      RelayState: options.relayState || ''
+    };
+
     // canonical request
     logoutRequest = trim_xml(logoutRequest);
 
-    if (options.cert && options.key) {
-      try {
-        // signed request
-        logoutRequest = sign_xml(options, logoutRequest);
-      } catch (err) {
-        return next(err);
+    if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
+      // HTTP-POST or HTTP-Redirect without deflate encoding
+      if (signRequest) {
+        try {
+          logoutRequest = signers.signXml(options, logoutRequest);
+        } catch (err) {
+          return next(err);
+        }
       }
+
+      params.SAMLRequest = new Buffer(logoutRequest).toString('base64');
+      return sendRequest(req, res, next, params);
     }
 
-    if (options.deflate) {
-      // we compress with deflate
-      zlib.deflateRaw(logoutRequest, function (err, buffer) {
-        if (err) return next(err);
-        sendRequest(req, res, next, buffer);
-      });
-    } else {
-      sendRequest(req, res, next, new Buffer(logoutRequest));
-    }
+    // HTTP-Redirect with deflate encoding (http://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf - section 3.4.4.1)
+    zlib.deflateRaw(new Buffer(logoutRequest), function (err, buffer) {
+      if (err) return next(err);
+
+      params.SAMLRequest = buffer.toString('base64');
+
+      if (signRequest) {
+        // construct the Signature: a string consisting of the concatenation of the SAMLRequest,
+        // RelayState (if present) and SigAlg query string parameters (each one URLencoded)
+        if (params.RelayState === '') {
+          // if there is no RelayState value, the parameter should be omitted from the signature computation
+          delete params.RelayState;
+        }
+        
+        params.SigAlg = signers.getSigAlg(options);
+        params.Signature = signers.sign(options, qs.stringify(params));
+      }
+
+      sendRequest(req, res, next, params);
+    });
   };
 };
 
