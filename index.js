@@ -114,9 +114,16 @@ module.exports = function (options) {
   };
 };
 
-module.exports.parseResponse = function (samlResponse, callback) {
-  zlib.inflateRaw(new Buffer(samlResponse, 'base64'), function (err, buffer) {
+module.exports.parseResponse = function (samlResponse, options, callback) {
+  // TODO: validate signature
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  var parse = function (err, buffer) {
     if (err) return callback(err);
+
     var xml = new DOMParser().parseFromString(buffer.toString());
     var parsedResponse = {};
 
@@ -146,5 +153,13 @@ module.exports.parseResponse = function (samlResponse, callback) {
     }
 
     callback(null, parsedResponse);
-  });
+  };
+
+  if (options.protocolBinding === BINDINGS.HTTP_GET && options.deflate) {
+    // HTTP-Redirect with deflate encoding
+    return zlib.inflateRaw(new Buffer(samlResponse, 'base64'), parse);
+  }
+
+  // HTTP-POST or HTTP-Redirect without deflate encoding
+  parse(null, new Buffer(samlResponse, 'base64'));
 };
