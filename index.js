@@ -3,6 +3,8 @@ var url       = require('url');
 var xmldom    = require('xmldom');
 var qs        = require('querystring');
 var xtend     = require('xtend');
+var util      = require('util');
+var qs        = require('querystring');
 var templates = require('./templates');
 var trim_xml  = require('./lib/trim_xml');
 var signers   = require('./lib/signers');
@@ -14,11 +16,12 @@ var BINDINGS = {
 };
 
 function generateUniqueID() {
-  var chars = "abcdef0123456789";
-  var uniqueID = "";
+  var chars = 'abcdef0123456789';
+  var uniqueID = '';
   for (var i = 0; i < 20; i++) {
     uniqueID += chars.substr(Math.floor((Math.random()*15)), 1);
   }
+
   return uniqueID;
 }
 
@@ -41,8 +44,102 @@ function appendQueryString(initialUrl, query) {
 }
 
 module.exports = function (options) {
+  options = options || {};
 
-  function sendRequest(req, res, next, params) {
+  var parseResponse = function (req, res, next) {
+    var SAMLResponse = req.query.SAMLResponse || req.body.SAMLResponse;
+
+    var parseAndValidate = function (err, buffer) {
+      if (err) return next(err);
+
+      var xml = new DOMParser().parseFromString(buffer.toString());
+      var parsedResponse = {};
+
+      // status code
+      var statusCodes = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusCode');
+      var statusCodeXml = statusCodes[0];
+      if (statusCodeXml) {
+        parsedResponse.status = statusCodeXml.getAttribute('Value');
+
+        // status sub code
+        var statusSubCodeXml = statusCodes[1];
+        if (statusSubCodeXml) {
+          parsedResponse.subCode = statusSubCodeXml.getAttribute('Value');
+        }
+      }
+
+      // status message
+      var samlStatusMsgXml = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusMessage')[0];
+      if (samlStatusMsgXml) {
+        parsedResponse.message = samlStatusMsgXml.textContent;
+      }
+
+      // status detail
+      var samlStatusDetailXml = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusDetail')[0];
+      if (samlStatusDetailXml) {
+        parsedResponse.detail = samlStatusDetailXml.textContent;
+      }
+
+      req.parsedSAMLResponse = parsedResponse;
+
+      // validate signature
+      try {
+        if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
+          // HTTP-POST or HTTP-Redirect without deflate encoding
+          var validationErrors = signers.validateXmlEmbeddedSignature(xml, options);
+          if (validationErrors && validationErrors.length > 0) {
+            return next(new Error(validationErrors.join('; ')));
+          }
+        }
+        else {
+          // HTTP-Redirect with deflate encoding
+          var signedContent = {
+            SAMLResponse: req.query.SAMLResponse,
+            RelayState: req.query.RelayState,
+            SigAlg: req.query.SigAlg
+          };
+
+          if (!signedContent.RelayState) {
+            delete signedContent.RelayState;
+          }
+
+          if (!signedContent.SigAlg) {
+            return next(new Error('SigAlg parameter is mandatory'));
+          }
+
+          signers.isValidContentAndSignature(qs.stringify(signedContent), req.query.Signature, {
+            identityProviderSigningCert: options.identityProviderSigningCert,
+            signatureAlgorithm: req.query.SigAlg
+          });
+        }
+      } catch (e) {
+        return next(e);
+      }
+
+      // validate status
+      if (parsedResponse.status !== 'urn:oasis:names:tc:SAML:2.0:status:Success') {
+        var err_message = parsedResponse.message && parsedResponse.detail ?
+          util.format('%s (%s)', parsedResponse.message, parsedResponse.detail) :
+          parsedResponse.message ||
+          parsedResponse.detail ||
+          util.format('unexpected SAMLP Logout response (%s)', parsedResponse.status);
+
+        return next(new Error(err_message));
+      }
+
+      next();
+    };
+
+    if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
+      // HTTP-POST or HTTP-Redirect without deflate encoding
+      return parseAndValidate(null, new Buffer(SAMLResponse, 'base64'));
+    }
+
+    // Default: HTTP-Redirect with deflate encoding
+    zlib.inflateRaw(new Buffer(SAMLResponse, 'base64'), parseAndValidate);
+  };
+
+  var sendRequest = function (req, res, next, params) {
     if (options.protocolBinding === BINDINGS.HTTP_POST) {
       // HTTP-POST
       res.set('Content-Type', 'text/html');
@@ -56,10 +153,24 @@ module.exports = function (options) {
     // HTTP-Redirect
     var samlRequestUrl = appendQueryString(options.identityProviderUrl, params);
     res.redirect(samlRequestUrl);
-  }
+  };
 
   return function (req, res, next) {
-    var signRequest = !!(options.cert && options.key);
+    // validations
+    if (!options.cert || !options.key) {
+      return next(new Error('signing key is mandatory (options.cert and options.key)'));
+    }
+
+    if (!options.identityProviderSigningCert) {
+      return next(new Error('options.identityProviderSigningCert is mandatory'));
+    }
+
+    if (req.query.SAMLResponse || req.body.SAMLResponse) {
+      // parse SAMLResponse (Logout Response)
+      return parseResponse(req, res, next);
+    }
+
+    // initialize a Logout Request
     var logoutRequest = templates.LogoutRequest({
       ID: generateUniqueID(),
       IssueInstant: getRoundTripDateFormat(),
@@ -79,87 +190,33 @@ module.exports = function (options) {
 
     if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
       // HTTP-POST or HTTP-Redirect without deflate encoding
-      if (signRequest) {
-        try {
-          logoutRequest = signers.signXml(options, logoutRequest);
-        } catch (err) {
-          return next(err);
-        }
+      try {
+        logoutRequest = signers.signXml(options, logoutRequest);
+      } catch (err) {
+        return next(err);
       }
 
       params.SAMLRequest = new Buffer(logoutRequest).toString('base64');
       return sendRequest(req, res, next, params);
     }
 
-    // HTTP-Redirect with deflate encoding (http://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf - section 3.4.4.1)
+    // Default: HTTP-Redirect with deflate encoding (http://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf - section 3.4.4.1)
     zlib.deflateRaw(new Buffer(logoutRequest), function (err, buffer) {
       if (err) return next(err);
 
       params.SAMLRequest = buffer.toString('base64');
 
-      if (signRequest) {
-        // construct the Signature: a string consisting of the concatenation of the SAMLRequest,
-        // RelayState (if present) and SigAlg query string parameters (each one URLencoded)
-        if (params.RelayState === '') {
-          // if there is no RelayState value, the parameter should be omitted from the signature computation
-          delete params.RelayState;
-        }
-        
-        params.SigAlg = signers.getSigAlg(options);
-        params.Signature = signers.sign(options, qs.stringify(params));
+      // construct the Signature: a string consisting of the concatenation of the SAMLRequest,
+      // RelayState (if present) and SigAlg query string parameters (each one URLencoded)
+      if (params.RelayState === '') {
+        // if there is no RelayState value, the parameter should be omitted from the signature computation
+        delete params.RelayState;
       }
+      
+      params.SigAlg = signers.getSigAlg(options);
+      params.Signature = signers.sign(options, qs.stringify(params));
 
       sendRequest(req, res, next, params);
     });
   };
-};
-
-module.exports.parseResponse = function (samlResponse, options, callback) {
-  // TODO: validate signature
-  if (typeof options === 'function') {
-    callback = options;
-    options = {};
-  }
-
-  var parse = function (err, buffer) {
-    if (err) return callback(err);
-
-    var xml = new DOMParser().parseFromString(buffer.toString());
-    var parsedResponse = {};
-
-    // status code
-    var statusCodes = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusCode');
-    var statusCodeXml = statusCodes[0];
-    if (statusCodeXml) {
-      parsedResponse.status = statusCodeXml.getAttribute('Value');
-
-      // status sub code
-      var statusSubCodeXml = statusCodes[1];
-      if (statusSubCodeXml) {
-        parsedResponse.subCode = statusSubCodeXml.getAttribute('Value');
-      }
-    }
-
-    // status message
-    var samlStatusMsgXml = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusMessage')[0];
-    if (samlStatusMsgXml) {
-      parsedResponse.message = samlStatusMsgXml.textContent;
-    }
-
-    // status detail
-    var samlStatusDetailXml = xml.getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:protocol', 'StatusDetail')[0];
-    if (samlStatusDetailXml) {
-      parsedResponse.detail = samlStatusDetailXml.textContent;
-    }
-
-    callback(null, parsedResponse);
-  };
-
-  if (options.protocolBinding === BINDINGS.HTTP_GET && options.deflate) {
-    // HTTP-Redirect with deflate encoding
-    return zlib.inflateRaw(new Buffer(samlResponse, 'base64'), parse);
-  }
-
-  // HTTP-POST or HTTP-Redirect without deflate encoding
-  parse(null, new Buffer(samlResponse, 'base64'));
 };
