@@ -13,6 +13,7 @@
     "thumbprint": "0.0.1",
     "xml-crypto": "^0.8.2",
     "xmldom": "^0.1.19",
+    "xpath": "0.0.21",
     "xtend": "^3.0.0"
   },
   "devDependencies": {

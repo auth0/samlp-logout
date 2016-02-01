@@ -1,6 +1,7 @@
 var zlib      = require('zlib');
 var url       = require('url');
 var xmldom    = require('xmldom');
+var xpath     = require('xpath');
 var qs        = require('querystring');
 var xtend     = require('xtend');
 var util      = require('util');
@@ -14,6 +15,8 @@ var BINDINGS = {
   HTTP_POST:      'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST',
   HTTP_REDIRECT:  'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect'
 };
+
+var RESPONSE_EMBEDDED_SIGNATURE_PATH = "//*[local-name(.)='LogoutResponse']/*[local-name(.)='Signature' and namespace-uri(.)='http://www.w3.org/2000/09/xmldsig#']";
 
 function generateUniqueID() {
   var chars = 'abcdef0123456789';
@@ -82,38 +85,43 @@ module.exports = function (options) {
 
       req.parsedSAMLResponse = parsedResponse;
 
-      // validate signature
-      try {
-        if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
-          // HTTP-POST or HTTP-Redirect without deflate encoding
-          var validationErrors = signers.validateXmlEmbeddedSignature(xml, options);
-          if (validationErrors && validationErrors.length > 0) {
-            return next(new Error(validationErrors.join('; ')));
+      var isResponseSigned = req.body.SAMLResponse ?
+        xpath.select(RESPONSE_EMBEDDED_SIGNATURE_PATH, xml).length > 0 : !!req.query.SigAlg;
+
+      if (isResponseSigned) {
+        // validate signature
+        try {
+          if (req.body.SAMLResponse || !options.deflate) {
+            // HTTP-POST or HTTP-Redirect without deflate encoding
+            var validationErrors = signers.validateXmlEmbeddedSignature(xml, options);
+            if (validationErrors && validationErrors.length > 0) {
+              return next(new Error(validationErrors.join('; ')));
+            }
           }
+          else {
+            // HTTP-Redirect with deflate encoding
+            var signedContent = {
+              SAMLResponse: req.query.SAMLResponse,
+              RelayState: req.query.RelayState,
+              SigAlg: req.query.SigAlg
+            };
+
+            if (!signedContent.RelayState) {
+              delete signedContent.RelayState;
+            }
+
+            if (!signedContent.SigAlg) {
+              return next(new Error('SigAlg parameter is mandatory'));
+            }
+
+            signers.isValidContentAndSignature(qs.stringify(signedContent), req.query.Signature, {
+              identityProviderSigningCert: options.identityProviderSigningCert,
+              signatureAlgorithm: req.query.SigAlg
+            });
+          }
+        } catch (e) {
+          return next(e);
         }
-        else {
-          // HTTP-Redirect with deflate encoding
-          var signedContent = {
-            SAMLResponse: req.query.SAMLResponse,
-            RelayState: req.query.RelayState,
-            SigAlg: req.query.SigAlg
-          };
-
-          if (!signedContent.RelayState) {
-            delete signedContent.RelayState;
-          }
-
-          if (!signedContent.SigAlg) {
-            return next(new Error('SigAlg parameter is mandatory'));
-          }
-
-          signers.isValidContentAndSignature(qs.stringify(signedContent), req.query.Signature, {
-            identityProviderSigningCert: options.identityProviderSigningCert,
-            signatureAlgorithm: req.query.SigAlg
-          });
-        }
-      } catch (e) {
-        return next(e);
       }
 
       // validate status
@@ -130,7 +138,7 @@ module.exports = function (options) {
       next();
     };
 
-    if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
+    if (req.body.SAMLResponse || !options.deflate) {
       // HTTP-POST or HTTP-Redirect without deflate encoding
       return parseAndValidate(null, new Buffer(SAMLResponse, 'base64'));
     }
@@ -156,6 +164,9 @@ module.exports = function (options) {
   };
 
   return function (req, res, next) {
+    req.body = req.body || {};
+    req.query = req.query || {};
+
     // validations
     if (!options.cert || !options.key) {
       return next(new Error('signing key is mandatory (options.cert and options.key)'));
