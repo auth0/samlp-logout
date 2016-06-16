@@ -5,8 +5,8 @@
 <body>
     <form method="post" name="hiddenform" action="<%= callback %>">
         <input type="hidden" 
-               name="SAMLRequest" 
-               value="<%= SAMLRequest %>">
+               name="<%= type %>" 
+               value="<%= token %>">
         <input type="hidden" name="RelayState" value="<%= RelayState %>">
         <noscript>
             <p>

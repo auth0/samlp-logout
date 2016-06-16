@@ -1,15 +1,13 @@
 var zlib      = require('zlib');
-var url       = require('url');
-var xmldom    = require('xmldom');
+var DOMParser = require('xmldom').DOMParser;
 var xpath     = require('xpath');
 var qs        = require('querystring');
-var xtend     = require('xtend');
 var util      = require('util');
 var qs        = require('querystring');
 var templates = require('./templates');
 var trim_xml  = require('./lib/trim_xml');
 var signers   = require('./lib/signers');
-var DOMParser = xmldom.DOMParser;
+var utils     = require('./lib/utils');
 
 var BINDINGS = {
   HTTP_POST:      'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST',
@@ -17,38 +15,189 @@ var BINDINGS = {
 };
 
 var RESPONSE_EMBEDDED_SIGNATURE_PATH = "//*[local-name(.)='LogoutResponse']/*[local-name(.)='Signature' and namespace-uri(.)='http://www.w3.org/2000/09/xmldsig#']";
+var REQUEST_EMBEDDED_SIGNATURE_PATH = "//*[local-name(.)='LogoutRequest']/*[local-name(.)='Signature' and namespace-uri(.)='http://www.w3.org/2000/09/xmldsig#']";
 
-function generateUniqueID() {
-  var chars = 'abcdef0123456789';
-  var uniqueID = '';
-  for (var i = 0; i < 20; i++) {
-    uniqueID += chars.substr(Math.floor((Math.random()*15)), 1);
+function prepareAndSendToken (req, res, type, token, options, cb) {
+  var send = function (params) {
+    if (options.protocolBinding === BINDINGS.HTTP_POST) {
+      // HTTP-POST
+      res.set('Content-Type', 'text/html');
+      return res.send(templates.Form({
+        type:         type,
+        callback:     options.identityProviderUrl,
+        RelayState:   params.RelayState,
+        token:        params[type]
+      }));
+    }
+
+    // HTTP-Redirect
+    var samlResponseUrl = utils.appendQueryString(options.identityProviderUrl, params);
+    res.redirect(samlResponseUrl);
+  };
+
+  var params = {};
+  params[type] = null;
+  params.RelayState = req.body.RelayState || req.query.RelayState || options.relayState || '';
+
+  // canonical request
+  token = trim_xml(token);
+
+  if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
+    // HTTP-POST or HTTP-Redirect without deflate encoding
+    try {
+      token = signers.signXml(options, token);
+    } catch (err) {
+      return cb(err);
+    }
+
+    params[type] = new Buffer(token).toString('base64');
+    return send(params);
   }
 
-  return uniqueID;
+  // Default: HTTP-Redirect with deflate encoding (http://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf - section 3.4.4.1)
+  zlib.deflateRaw(new Buffer(token), function (err, buffer) {
+    if (err) return cb(err);
+
+    params[type] = buffer.toString('base64');
+
+    // construct the Signature: a string consisting of the concatenation of the SAMLResponse,
+    // RelayState (if present) and SigAlg query string parameters (each one URLencoded)
+    if (params.RelayState === '') {
+      // if there is no RelayState value, the parameter should be omitted from the signature computation
+      delete params.RelayState;
+    }
+
+    params.SigAlg = signers.getSigAlg(options);
+    params.Signature = signers.sign(options, qs.stringify(params));
+
+    send(params);
+  });
 }
 
-//http://msdn.microsoft.com/en-us/library/az4se3k1.aspx#Roundtrip
-function getRoundTripDateFormat() {
-  var date = new Date();
-  return date.getUTCFullYear() + '-' +
-        ('0' + (date.getUTCMonth()+1)).slice(-2) + '-' +
-        ('0' + date.getUTCDate()).slice(-2) + 'T' +
-        ('0' + date.getUTCHours()).slice(-2) + ":" +
-        ('0' + date.getUTCMinutes()).slice(-2) + ":" +
-        ('0' + date.getUTCSeconds()).slice(-2) + "Z";
+function isTokenExpired (logoutNode) {
+  var notOnOrAfterText = logoutNode.getAttribute('NotOnOrAfter');
+  if (notOnOrAfterText) {
+    var notOnOrAfter = new Date(notOnOrAfterText);
+    notOnOrAfter = notOnOrAfter.setMinutes(notOnOrAfter.getMinutes() + 10); // 10 minutes clock skew
+    var now = new Date();
+    return now > notOnOrAfter;
+  }
+
+  return false;
 }
 
-function appendQueryString(initialUrl, query) {
-  var parsed = url.parse(initialUrl, true);
-  parsed.query = xtend(parsed.query, query);
-  delete parsed.search;
-  return url.format(parsed);
+function validateSignature (req, type, xml, options) {
+  var isRequestSigned = req.body[type] ?
+    xpath.select(REQUEST_EMBEDDED_SIGNATURE_PATH, xml).length > 0 : !!req.query.SigAlg;
+
+  if (isRequestSigned) {
+    if (req.body[type] || !options.deflate) {
+      // HTTP-POST or HTTP-Redirect without deflate encoding
+      var validationErrors = signers.validateXmlEmbeddedSignature(xml, options);
+      if (validationErrors && validationErrors.length > 0) {
+        throw new Error(validationErrors.join('; '));
+      }
+    }
+    else {
+      // HTTP-Redirect with deflate encoding
+      var signedContent = {};
+      signedContent[type] = req.query[type];
+      signedContent.RelayState = req.query.RelayState;
+      signedContent.SigAlg = req.query.SigAlg;
+
+      if (!signedContent.RelayState) {
+        delete signedContent.RelayState;
+      }
+
+      if (!signedContent.SigAlg) {
+        throw new Error('SigAlg parameter is mandatory');
+      }
+
+      var valid = signers.isValidContentAndSignature(qs.stringify(signedContent), req.query.Signature, {
+        identityProviderSigningCert: options.identityProviderSigningCert,
+        signatureAlgorithm: req.query.SigAlg
+      });
+      
+      if (!valid) {
+        throw new Error('invalid signature: the signature value ' + req.query.Signature + ' is incorrect');
+      }
+    }
+  }
 }
 
 module.exports = function (options) {
   options = options || {};
 
+  // Scenario #2: IdP Single Logout - SLO
+  var idpSingleLogOut = function (req, res, next) {
+    var SAMLRequest = req.query.SAMLRequest || req.body.SAMLRequest;
+
+    var validateAndRespond = function (err, buffer) {
+      if (err) return next(err);
+
+      var xml = new DOMParser().parseFromString(buffer.toString());
+      var logoutRequestNode = xpath.select("//*[local-name(.)='LogoutRequest']", xml)[0];
+
+      // validate expiration
+      if (isTokenExpired(logoutRequestNode)) {
+        return next(new Error('LogoutRequest has expired'));
+      }
+
+      // validate signature
+      try {
+        validateSignature(req, 'SAMLRequest', xml, options);
+      } catch (e) {
+        return next(e);
+      }
+
+      // get ID, Issuer, NameID and SessionIndex
+      var parsedRequest = {};
+      parsedRequest.id = logoutRequestNode && logoutRequestNode.getAttribute('ID');
+
+      var issuerNode = xpath.select("//*[local-name(.)='Issuer']", xml);
+      parsedRequest.issuer = issuerNode && issuerNode[0].textContent;
+
+      var nameIdNode = xpath.select("//*[local-name(.)='NameID']", xml);
+      parsedRequest.nameId = nameIdNode && nameIdNode[0].textContent;
+
+      var sessionIndexNode = xpath.select("//*[local-name(.)='SessionIndex']", xml);
+      parsedRequest.sessionIndex = sessionIndexNode && sessionIndexNode[0].textContent;
+
+      // validate parameters (NameID and SessionIndex)
+      if (!parsedRequest.sessionIndex) { return next(new Error('Missing SessionIndex')); }
+      if (!parsedRequest.nameId) { return next(new Error('Missing NameID')); }
+
+      var checkSessionIndex = typeof options.validSessionIndex === 'function';
+      var isValidSessionIndex = checkSessionIndex && options.validSessionIndex(parsedRequest);
+      if (checkSessionIndex && !isValidSessionIndex) {
+        return next(new Error('Invalid SessionIndex/NameID'));
+      }
+
+      // prepare and send response
+      var logoutResponse = templates.LogoutResponse({
+        ID: utils.generateUniqueID(),
+        IssueInstant: utils.getRoundTripDateFormat(),
+        Destination: options.identityProviderUrl,
+        InResponseTo: parsedRequest.id,
+        Issuer: options.issuer,
+        StatusCode: 'urn:oasis:names:tc:SAML:2.0:status:Success' // TODO: support all status codes
+      });
+
+      options.reference = "//*[local-name(.)='LogoutResponse' and namespace-uri(.)='urn:oasis:names:tc:SAML:2.0:protocol']";
+      
+      prepareAndSendToken(req, res, 'SAMLResponse', logoutResponse, options, next);
+    };
+
+    if (req.body.SAMLRequest || !options.deflate) {
+      // HTTP-POST or HTTP-Redirect without deflate encoding
+      return validateAndRespond(null, new Buffer(SAMLRequest, 'base64'));
+    }
+
+    // Default: HTTP-Redirect with deflate encoding
+    zlib.inflateRaw(new Buffer(SAMLRequest, 'base64'), validateAndRespond);
+  };
+
+  // Scenario #1.2: parse and validate SAMLResponse (Logout Response)
   var parseResponse = function (req, res, next) {
     var SAMLResponse = req.query.SAMLResponse || req.body.SAMLResponse;
 
@@ -85,43 +234,11 @@ module.exports = function (options) {
 
       req.parsedSAMLResponse = parsedResponse;
 
-      var isResponseSigned = req.body.SAMLResponse ?
-        xpath.select(RESPONSE_EMBEDDED_SIGNATURE_PATH, xml).length > 0 : !!req.query.SigAlg;
-
-      if (isResponseSigned) {
-        // validate signature
-        try {
-          if (req.body.SAMLResponse || !options.deflate) {
-            // HTTP-POST or HTTP-Redirect without deflate encoding
-            var validationErrors = signers.validateXmlEmbeddedSignature(xml, options);
-            if (validationErrors && validationErrors.length > 0) {
-              return next(new Error(validationErrors.join('; ')));
-            }
-          }
-          else {
-            // HTTP-Redirect with deflate encoding
-            var signedContent = {
-              SAMLResponse: req.query.SAMLResponse,
-              RelayState: req.query.RelayState,
-              SigAlg: req.query.SigAlg
-            };
-
-            if (!signedContent.RelayState) {
-              delete signedContent.RelayState;
-            }
-
-            if (!signedContent.SigAlg) {
-              return next(new Error('SigAlg parameter is mandatory'));
-            }
-
-            signers.isValidContentAndSignature(qs.stringify(signedContent), req.query.Signature, {
-              identityProviderSigningCert: options.identityProviderSigningCert,
-              signatureAlgorithm: req.query.SigAlg
-            });
-          }
-        } catch (e) {
-          return next(e);
-        }
+      // validate signature
+      try {
+        validateSignature(req, 'SAMLResponse', xml, options);
+      } catch (e) {
+        return next(e);
       }
 
       // validate status
@@ -147,22 +264,6 @@ module.exports = function (options) {
     zlib.inflateRaw(new Buffer(SAMLResponse, 'base64'), parseAndValidate);
   };
 
-  var sendRequest = function (req, res, next, params) {
-    if (options.protocolBinding === BINDINGS.HTTP_POST) {
-      // HTTP-POST
-      res.set('Content-Type', 'text/html');
-      return res.send(templates.Form({
-        callback:     options.identityProviderUrl,
-        RelayState:   params.RelayState,
-        SAMLRequest:  params.SAMLRequest
-      }));
-    }
-
-    // HTTP-Redirect
-    var samlRequestUrl = appendQueryString(options.identityProviderUrl, params);
-    res.redirect(samlRequestUrl);
-  };
-
   return function (req, res, next) {
     req.body = req.body || {};
     req.query = req.query || {};
@@ -176,58 +277,26 @@ module.exports = function (options) {
       return next(new Error('options.identityProviderSigningCert is mandatory'));
     }
 
+    if (req.query.SAMLRequest || req.body.SAMLRequest) {
+      // Scenario #2 (IdP-Initiated SLO): parse and validate SAMLRequest and return a SAMLResponse
+      return idpSingleLogOut(req, res, next);
+    }
+
     if (req.query.SAMLResponse || req.body.SAMLResponse) {
-      // parse SAMLResponse (Logout Response)
+      // Scenario #1.2: parse and validate the Logout Response
       return parseResponse(req, res, next);
     }
 
-    // initialize a Logout Request
+    // Scenario #1.1: initialize a Logout Request
     var logoutRequest = templates.LogoutRequest({
-      ID: generateUniqueID(),
-      IssueInstant: getRoundTripDateFormat(),
+      ID: utils.generateUniqueID(),
+      IssueInstant: utils.getRoundTripDateFormat(),
       Issuer: options.issuer,
       NameID: typeof req.samlNameID === 'string' ? { value: req.samlNameID } : req.samlNameID,
       SessionIndex: req.samlSessionIndex,
       Destination: options.identityProviderUrl
     });
 
-    var params = {
-      SAMLRequest: null,
-      RelayState: options.relayState || ''
-    };
-
-    // canonical request
-    logoutRequest = trim_xml(logoutRequest);
-
-    if (options.protocolBinding === BINDINGS.HTTP_POST || !options.deflate) {
-      // HTTP-POST or HTTP-Redirect without deflate encoding
-      try {
-        logoutRequest = signers.signXml(options, logoutRequest);
-      } catch (err) {
-        return next(err);
-      }
-
-      params.SAMLRequest = new Buffer(logoutRequest).toString('base64');
-      return sendRequest(req, res, next, params);
-    }
-
-    // Default: HTTP-Redirect with deflate encoding (http://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf - section 3.4.4.1)
-    zlib.deflateRaw(new Buffer(logoutRequest), function (err, buffer) {
-      if (err) return next(err);
-
-      params.SAMLRequest = buffer.toString('base64');
-
-      // construct the Signature: a string consisting of the concatenation of the SAMLRequest,
-      // RelayState (if present) and SigAlg query string parameters (each one URLencoded)
-      if (params.RelayState === '') {
-        // if there is no RelayState value, the parameter should be omitted from the signature computation
-        delete params.RelayState;
-      }
-      
-      params.SigAlg = signers.getSigAlg(options);
-      params.Signature = signers.sign(options, qs.stringify(params));
-
-      sendRequest(req, res, next, params);
-    });
+    prepareAndSendToken(req, res, 'SAMLRequest', logoutRequest, options, next);
   };
 };
