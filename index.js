@@ -122,6 +122,8 @@ function validateSignature (req, type, xml, options) {
         throw new Error('invalid signature: the signature value ' + req.query.Signature + ' is incorrect');
       }
     }
+  } else if (type === 'SAMLRequest') {
+    throw new Error('LogoutRequest message MUST be signed when using an asynchronous binding (POST or Redirect)');
   }
 }
 
