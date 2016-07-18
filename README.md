@@ -14,8 +14,9 @@ var SamlpLogout = require('samlp-logout');
 var logout = SamlpLogout({
   issuer: 'urn:foobar',
   identityProviderUrl: 'http://xx.b',
-  cert: fs.readFileSync('signingKey.pem'),
-  key: fs.readFileSync('signingKey.key')
+  identityProviderSigningCert: fs.readFileSync('idpSigningKey.pem'), // validate LogoutRequest signature
+  key: fs.readFileSync('signingKey.key'), // sign LogoutResponse
+  cert: fs.readFileSync('signingKey.pem')
 });
 
 // assuming we have req.samlSessionIndex and req.samlNameID
