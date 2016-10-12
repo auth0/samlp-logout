@@ -138,6 +138,40 @@ describe('IdP Initiated - SAMLRequest - HTTP POST Binding', function () {
           done();
         });
       });
+
+      it('should return missing SessionIndex if element was not found', function (done) {
+        const temp = '<urn:LogoutRequest xmlns:urn="urn:oasis:names:tc:SAML:2.0:protocol"><urn1:Issuer xmlns:urn1="urn:oasis:names:tc:SAML:2.0:assertion">https://saml_provider.com</urn1:Issuer><saml:NameID xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">%s</saml:NameID></urn:LogoutRequest>';
+
+        var req = {
+          query: {},
+          body: {
+            SAMLRequest: signAndBase64(util.format(temp, new Date().toISOString(), 'john@acme.com'))
+          }
+        };
+
+        logout(req, {}, function (err) {
+          expect(err).to.be.ok;
+          expect(err.message).to.equal('Missing SessionIndex');
+          done();
+        });
+      });
+
+      it('should return missing NameID if element was not found', function (done) {
+        const temp = '<urn:LogoutRequest xmlns:urn="urn:oasis:names:tc:SAML:2.0:protocol"><urn1:Issuer xmlns:urn1="urn:oasis:names:tc:SAML:2.0:assertion">https://saml_provider.com</urn1:Issuer><urn:SessionIndex>session</urn:SessionIndex></urn:LogoutRequest>';
+
+        var req = {
+          query: {},
+          body: {
+            SAMLRequest: signAndBase64(util.format(temp, new Date().toISOString(), 'john@acme.com'))
+          }
+        };
+
+        logout(req, {}, function (err) {
+          expect(err).to.be.ok;
+          expect(err.message).to.equal('Missing NameID');
+          done();
+        });
+      });
     });
 
     describe('when request is valid', function () {
