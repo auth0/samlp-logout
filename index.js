@@ -157,13 +157,13 @@ module.exports = function (options) {
       parsedRequest.id = logoutRequestNode && logoutRequestNode.getAttribute('ID');
 
       var issuerNode = xpath.select("//*[local-name(.)='Issuer']", xml);
-      parsedRequest.issuer = issuerNode && issuerNode[0].textContent;
+      parsedRequest.issuer = issuerNode && issuerNode[0] && issuerNode[0].textContent;
 
       var nameIdNode = xpath.select("//*[local-name(.)='NameID']", xml);
-      parsedRequest.nameId = nameIdNode && nameIdNode[0].textContent;
+      parsedRequest.nameId = nameIdNode && nameIdNode[0] && nameIdNode[0].textContent;
 
       var sessionIndexNode = xpath.select("//*[local-name(.)='SessionIndex']", xml);
-      parsedRequest.sessionIndex = sessionIndexNode && sessionIndexNode[0].textContent;
+      parsedRequest.sessionIndex = sessionIndexNode && sessionIndexNode[0] && sessionIndexNode[0].textContent;
 
       // validate parameters (NameID and SessionIndex)
       if (!parsedRequest.sessionIndex) { return next(new Error('Missing SessionIndex')); }
