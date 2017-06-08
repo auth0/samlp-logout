@@ -11,7 +11,7 @@
   "dependencies": {
     "ejs": "^1.0.0",
     "thumbprint": "0.0.1",
-    "xml-crypto": "^0.8.2",
+    "xml-crypto": "~0.10.1",
     "xmldom": "^0.1.19",
     "xpath": "0.0.21",
     "xtend": "^3.0.0"
