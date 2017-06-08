@@ -249,7 +249,7 @@ describe('IdP Initiated - SAMLRequest - HTTP POST Binding', function () {
 
       it('should contain a valid signature embedded', function () {
         var signature = xmlCrypto.xpath(SAMLResponse, "/*/*[local-name(.)='Signature' and namespace-uri(.)='http://www.w3.org/2000/09/xmldsig#']")[0];
-        var sig = new xmlCrypto.SignedXml(null, { idAttribute: 'ID' });
+        var sig = new xmlCrypto.SignedXml();
         sig.keyInfoProvider = {
           getKeyInfo: function () {
             return '<X509Data></X509Data>';
@@ -262,7 +262,7 @@ describe('IdP Initiated - SAMLRequest - HTTP POST Binding', function () {
         sig.loadSignature(signature.toString());
         expect(sig.checkSignature(SAMLResponse.toString())).to.be.true;
         expect(sig.validationErrors).to.be.empty;
-        
+
         expect(SAMLResponse.documentElement
               .getElementsByTagName('SignatureMethod')[0]
               .getAttribute('Algorithm')).to.equal('http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
