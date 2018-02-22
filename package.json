@@ -9,8 +9,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@auth0/thumbprint": "0.0.2",
     "ejs": "^2.5.6",
-    "thumbprint": "ziluvatar/thumbprint#node6",
     "xml-crypto": "~0.10.1",
     "xmldom": "^0.1.19",
     "xpath": "0.0.21",
