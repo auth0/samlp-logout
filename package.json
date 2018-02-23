@@ -9,12 +9,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@auth0/thumbprint": "0.0.6",
     "ejs": "^2.5.6",
-    "thumbprint": "0.0.1",
     "xml-crypto": "~0.10.1",
     "xmldom": "^0.1.19",
     "xpath": "0.0.21",
-    "xtend": "^3.0.0"
+    "xtend": "^4.0.0"
   },
   "devDependencies": {
     "chai": "^1.9.1",
