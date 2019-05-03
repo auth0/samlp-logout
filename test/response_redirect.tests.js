@@ -17,6 +17,13 @@ var template = '<samlp:LogoutResponse ID="_e87afa98-70ec-4b11-8efd-cc55685b7373"
 describe('SAMLResponse - HTTP Redirect Binding', function () {
   describe('signed response', function () {
     describe('with deflate', function () {
+      function sign(value) {
+        return signers.sign({
+          key: credentials.key,
+          signatureAlgorithm: 'RSA-SHA256'
+        }, value)
+      }
+
       var deflateAndBase64AndSign = function (params) {
         if (!params.RelayState) {
           delete params.RelayState;
@@ -28,10 +35,7 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         var query = {
           SAMLResponse: params.SAMLResponse,
           SigAlg: params.SigAlg,
-          Signature: signers.sign({
-            key: credentials.key,
-            signatureAlgorithm: 'RSA-SHA256'
-          }, qs.stringify(params))
+          Signature: sign(qs.stringify(params))
         };
 
         if (params.RelayState) {
@@ -50,10 +54,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is valid', function () {
         it('should call next and set parsed SAMLResponse', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -66,12 +73,41 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
       });
 
+      it('should call next and set parsed SAMLResponse when raw query does not match unescaped query', function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>'),
+        });
+
+        var queryString = qs.stringify({
+          SAMLResponse: query.SAMLResponse,
+          SigAlg: query.SigAlg
+        }).replace(/\%../g, function(t) { return t.toLowerCase(); });
+
+        query.Signature = sign(queryString);
+
+        var req = {
+          url: 'https://foo.com?' + queryString,
+          query: query
+        };
+
+        logout(req, {}, function (err) {
+          expect(err).to.be.undefined;
+          expect(req.parsedSAMLResponse).to.be.ok;
+          expect(Object.keys(req.parsedSAMLResponse)).to.have.length(1);
+          expect(req.parsedSAMLResponse.status).to.equal('urn:oasis:names:tc:SAML:2.0:status:Success');
+          done();
+        });
+      });
+
       describe('when status is invalid', function () {
         it('should call next with error and set parsed SAMLResponse with only StatusCode element', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"/></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"/></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -85,10 +121,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusMessage elements', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -103,10 +142,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusDetail elements', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -121,10 +163,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -140,10 +185,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode and StatusMessage elements', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -159,10 +207,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -179,10 +230,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse without Status element', function (done) {
+          var query = deflateAndBase64AndSign({
+            SAMLResponse: util.format(template, '')
+          });
+
           var req = {
-            query: deflateAndBase64AndSign({
-              SAMLResponse: util.format(template, '')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -224,10 +278,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is valid', function () {
         it('should call next and set parsed SAMLResponse', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -242,10 +299,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is invalid', function () {
         it('should call next with error and set parsed SAMLResponse with only StatusCode element', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester" /></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester" /></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -259,10 +319,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusMessage elements', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -277,10 +340,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusDetail elements', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -295,10 +361,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -314,10 +383,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode and StatusMessage elements', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -333,10 +405,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -353,10 +428,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse without Status element', function (done) {
+          var query = signAndBase64({
+            SAMLResponse: util.format(template, '')
+          });
+
           var req = {
-            query: signAndBase64({
-              SAMLResponse: util.format(template, '')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -387,10 +465,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is valid', function () {
         it('should call next and set parsed SAMLResponse', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -405,10 +486,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is invalid', function () {
         it('should call next with error and set parsed SAMLResponse with only StatusCode element', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"/></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"/></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -422,10 +506,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusMessage elements', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -440,10 +527,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusDetail elements', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -458,10 +548,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -477,10 +570,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode and StatusMessage elements', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -496,10 +592,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -516,10 +615,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse without Status element', function (done) {
+          var query = deflateAndBase64({
+            SAMLResponse: util.format(template, '')
+          });
+
           var req = {
-            query: deflateAndBase64({
-              SAMLResponse: util.format(template, '')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -548,10 +650,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is valid', function () {
         it('should call next and set parsed SAMLResponse', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" /></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -566,10 +671,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
 
       describe('when status is invalid', function () {
         it('should call next with error and set parsed SAMLResponse with only StatusCode element', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester" /></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester" /></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -583,10 +691,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusMessage elements', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -601,10 +712,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode and StatusDetail elements', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -619,10 +733,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -638,10 +755,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode and StatusMessage elements', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -657,10 +777,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse with StatusCode, sub-StatusCode, StatusMessage and StatusDetail elements', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester"><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:RequestDenied"/></samlp:StatusCode><samlp:StatusMessage>urn:signicat:error:saml2.0:session:nonexistent; The session did not exist</samlp:StatusMessage><samlp:StatusDetail>some detail</samlp:StatusDetail></samlp:Status>')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {
@@ -677,10 +800,13 @@ describe('SAMLResponse - HTTP Redirect Binding', function () {
         });
 
         it('should call next with error and set parsed SAMLResponse without Status element', function (done) {
+          var query = base64({
+            SAMLResponse: util.format(template, '')
+          });
+
           var req = {
-            query: base64({
-              SAMLResponse: util.format(template, '')
-            })
+            url: 'https://foo.com?' + qs.stringify(query),
+            query: query
           };
 
           logout(req, {}, function (err) {

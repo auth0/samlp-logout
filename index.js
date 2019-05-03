@@ -1,9 +1,9 @@
 var zlib      = require('zlib');
 var DOMParser = require('xmldom').DOMParser;
 var xpath     = require('xpath');
-var qs        = require('querystring');
 var util      = require('util');
 var qs        = require('querystring');
+var url       = require('url');
 var templates = require('./templates');
 var trim_xml  = require('./lib/trim_xml');
 var signers   = require('./lib/signers');
@@ -100,24 +100,34 @@ function validateSignature (req, type, xml, options) {
     }
     else {
       // HTTP-Redirect with deflate encoding
-      var signedContent = {};
-      signedContent[type] = req.query[type];
-      signedContent.RelayState = req.query.RelayState;
-      signedContent.SigAlg = req.query.SigAlg;
+      // Section 3.4.4.1 https://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf
 
-      if (!signedContent.RelayState) {
-        delete signedContent.RelayState;
-      }
+      // Get unescaped query string values, signature must be verified using the original
+      // escaping rules.
+      var parsedUrl = url.parse(req.url);
+      var rawQuery = qs.parse(
+        parsedUrl.query,
+        null,
+        null,
+        // Do not decode query values
+        { decodeURIComponent: function(s) { return s; } }
+      );
 
-      if (!signedContent.SigAlg) {
+      if (!rawQuery.SigAlg) {
         throw new Error('SigAlg parameter is mandatory');
       }
 
-      var valid = signers.isValidContentAndSignature(qs.stringify(signedContent), req.query.Signature, {
+      var payload = (
+        type + '=' + rawQuery[type] +
+        (rawQuery.RelayState ? '&RelayState=' + rawQuery.RelayState : '') +
+        '&SigAlg=' + rawQuery.SigAlg
+      );
+
+      var valid = signers.isValidContentAndSignature(payload, req.query.Signature, {
         identityProviderSigningCert: options.identityProviderSigningCert,
         signatureAlgorithm: req.query.SigAlg
       });
-      
+
       if (!valid) {
         throw new Error('invalid signature: the signature value ' + req.query.Signature + ' is incorrect');
       }
@@ -186,7 +196,7 @@ module.exports = function (options) {
       });
 
       options.reference = "//*[local-name(.)='LogoutResponse' and namespace-uri(.)='urn:oasis:names:tc:SAML:2.0:protocol']";
-      
+
       prepareAndSendToken(req, res, 'SAMLResponse', logoutResponse, options, next);
     };
 
