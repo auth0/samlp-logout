@@ -66,10 +66,13 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
 
     describe('when request is invalid', function () {
       it('should return error if request has expired', function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLRequest: util.format(template, '1983-05-17T20:32:16.835Z', 'john@acme.com', 'abc')
+        });
+
         var req = {
-          query: deflateAndBase64AndSign({
-            SAMLRequest: util.format(template, '1983-05-17T20:32:16.835Z', 'john@acme.com', 'abc')
-          })
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         logout(req, {}, function (err) {
@@ -80,10 +83,13 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
       });
 
       it('should return error if request has invalid signature', function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'abc')
+        }, credentials2)
+
         var req = {
-          query: deflateAndBase64AndSign({
-            SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'abc')
-          }, credentials2)
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         logout(req, {}, function (err) {
@@ -94,10 +100,13 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
       });
 
       it('should return error if request is not signed', function (done) {
+        var query = deflateAndBase64({
+          SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'abc')
+        });
+
         var req = {
-          query: deflateAndBase64({
-            SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'abc')
-          })
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         logout(req, {}, function (err) {
@@ -108,10 +117,13 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
       });
 
       it('should return error if SessionIndex is missing', function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', '')
+        });
+
         var req = {
-          query: deflateAndBase64AndSign({
-            SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', '')
-          })
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         logout(req, {}, function (err) {
@@ -122,10 +134,13 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
       });
 
       it('should return error if NameID is missing', function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLRequest: util.format(template, new Date().toISOString(), '', 'abc')
+        });
+
         var req = {
-          query: deflateAndBase64AndSign({
-            SAMLRequest: util.format(template, new Date().toISOString(), '', 'abc')
-          })
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         logout(req, {}, function (err) {
@@ -136,10 +151,13 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
       });
 
       it('should return error if SessionIndex is invalid', function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'invalid')
+        });
+
         var req = {
-          query: deflateAndBase64AndSign({
-            SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'invalid')
-          })
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         logout(req, {}, function (err) {
@@ -154,11 +172,14 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
       var redirect, RelayState, SAMLResponse, SAMLResponseOriginal, SigAlg, Signature;
 
       before(function (done) {
+        var query = deflateAndBase64AndSign({
+          SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'abc'),
+          RelayState: 'foo'
+        });
+
         var req = {
-          query: deflateAndBase64AndSign({
-            SAMLRequest: util.format(template, new Date().toISOString(), 'john@acme.com', 'abc'),
-            RelayState: 'foo'
-          })
+          url: 'https://foo.com?' + qs.stringify(query),
+          query: query
         };
 
         var res = {
