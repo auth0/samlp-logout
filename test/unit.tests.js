@@ -13,7 +13,6 @@ const credentials = {
 
 describe('samlpLogout', function () {
   describe('with a malformed key', function () {
-    var parsedUrl;
     it('should invoke the callback with an error', function (done) {
       const logout = samlpLogout({
         issuer: 'http://example.org',
@@ -32,7 +31,7 @@ describe('samlpLogout', function () {
         body: {}
       }, {
         redirect: function (location) {
-          parsedUrl = url.parse(location, true);
+          const parsedUrl = url.parse(location, true);
 
           expect(parsedUrl.protocol).to.equal('http:');
           expect(parsedUrl.hostname).to.equal('myadfs.com');
