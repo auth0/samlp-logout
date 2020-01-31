@@ -68,7 +68,12 @@ function prepareAndSendToken (req, res, type, token, options, cb) {
     }
 
     params.SigAlg = signers.getSigAlg(options);
-    params.Signature = signers.sign(options, qs.stringify(params));
+
+    try {
+      params.Signature = signers.sign(options, qs.stringify(params));
+    } catch (e) {
+      return cb(e);
+    }
 
     send(params);
   });
