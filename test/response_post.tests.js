@@ -46,6 +46,21 @@ describe('SAMLResponse - HTTP POST Binding', function () {
           done();
         });
       });
+
+      it('should call next and set parsed SAMLResponse for a PartialLogout response', function (done) {
+        var req = {
+          query: {},
+          body: { SAMLResponse: signAndBase64(util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:PartialLogout" /></samlp:Status>')) }
+        };
+
+        logout(req, {}, function (err) {
+          expect(err).to.be.undefined;
+          expect(req.parsedSAMLResponse).to.be.ok;
+          expect(Object.keys(req.parsedSAMLResponse)).to.have.length(1);
+          expect(req.parsedSAMLResponse.status).to.equal('urn:oasis:names:tc:SAML:2.0:status:PartialLogout');
+          done();
+        });
+      });
     });
 
     describe('when status is invalid', function () {
@@ -195,6 +210,21 @@ describe('SAMLResponse - HTTP POST Binding', function () {
           expect(req.parsedSAMLResponse).to.be.ok;
           expect(Object.keys(req.parsedSAMLResponse)).to.have.length(1);
           expect(req.parsedSAMLResponse.status).to.equal('urn:oasis:names:tc:SAML:2.0:status:Success');
+          done();
+        });
+      });
+
+      it('should call next and set parsed SAMLResponse for a PartialLogout response', function (done) {
+        var req = {
+          query: {},
+          body: { SAMLResponse: base64(util.format(template, '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:PartialLogout" /></samlp:Status>')) }
+        };
+
+        logout(req, {}, function (err) {
+          expect(err).to.be.undefined;
+          expect(req.parsedSAMLResponse).to.be.ok;
+          expect(Object.keys(req.parsedSAMLResponse)).to.have.length(1);
+          expect(req.parsedSAMLResponse.status).to.equal('urn:oasis:names:tc:SAML:2.0:status:PartialLogout');
           done();
         });
       });

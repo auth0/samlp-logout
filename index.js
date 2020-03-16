@@ -258,8 +258,12 @@ module.exports = function (options) {
         return next(e);
       }
 
-      // validate status
-      if (parsedResponse.status !== 'urn:oasis:names:tc:SAML:2.0:status:Success') {
+      // validate statuses
+      const validStatuses = [
+        'urn:oasis:names:tc:SAML:2.0:status:Success', 
+        'urn:oasis:names:tc:SAML:2.0:status:PartialLogout'
+      ];
+      if (!validStatuses.includes(parsedResponse.status)) {
         var err_message = parsedResponse.message && parsedResponse.detail ?
           util.format('%s (%s)', parsedResponse.message, parsedResponse.detail) :
           parsedResponse.message ||
