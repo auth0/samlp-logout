@@ -4,12 +4,13 @@
   "description": "Federated SAMLP single sign-out",
   "main": "index.js",
   "scripts": {
-    "test": "mocha"
+    "test": "./node_modules/.bin/_mocha -R spec --colors"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@auth0/thumbprint": "0.0.6",
+    "auth0-id-generator": "^0.2.0",
     "ejs": "^2.5.6",
     "xml-crypto": "~0.10.1",
     "xmldom": "^0.1.19",
