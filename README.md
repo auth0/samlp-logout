@@ -1,5 +1,7 @@
 Federated single sign-out for SAMLP providers from express.js applications.
 
+![Build Status](https://github.com/auth0/samlp-logout/workflows/Tests/badge.svg)
+
 ## Installation
 
 ```
