@@ -4,7 +4,8 @@
   "description": "Federated SAMLP single sign-out",
   "main": "index.js",
   "scripts": {
-    "test": "./node_modules/.bin/_mocha -R spec --colors"
+    "test": "./node_modules/.bin/_mocha -R spec --colors",
+    "cover": "nyc npm run test"
   },
   "repository": {
     "type": "git",
@@ -24,7 +25,9 @@
   "devDependencies": {
     "chai": "^1.9.1",
     "cheerio": "^0.22.0",
-    "mocha": "^8.2.1"
+    "mocha": "^8.2.1",
+    "nyc": "^15.1.0",
+    "standard-version": "^9.1.0"
   },
   "keywords": [
     "saml",
