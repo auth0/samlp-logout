@@ -6,21 +6,25 @@
   "scripts": {
     "test": "./node_modules/.bin/_mocha -R spec --colors"
   },
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/auth0/samlp-logout.git"
+  },
+  "author": "Auth0",
   "license": "MIT",
   "dependencies": {
     "@auth0/thumbprint": "0.0.6",
     "auth0-id-generator": "^0.2.0",
     "ejs": "^2.5.6",
-    "xml-crypto": "~0.10.1",
+    "xml-crypto": "^2.0.0",
     "xmldom": "^0.1.19",
     "xpath": "0.0.21",
     "xtend": "^4.0.0"
   },
   "devDependencies": {
     "chai": "^1.9.1",
-    "mocha": "^1.20.1",
-    "cheerio": "^0.19.0"
+    "cheerio": "^0.22.0",
+    "mocha": "^8.2.1"
   },
   "keywords": [
     "saml",
