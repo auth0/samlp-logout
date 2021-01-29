@@ -11,6 +11,9 @@
     "type": "git",
     "url": "https://github.com/auth0/samlp-logout.git"
   },
+  "bugs": {
+    "url": "https://github.com/auth0/samlp-logout/issues"
+  },
   "author": "Auth0",
   "license": "MIT",
   "dependencies": {
