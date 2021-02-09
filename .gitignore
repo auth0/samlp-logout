@@ -32,4 +32,4 @@ node_modules
 
 /.nyc_output/
 .idea
-/package-lock.json
+package-lock.json
