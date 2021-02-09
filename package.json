@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "./node_modules/.bin/_mocha -R spec --colors",
-    "cover": "nyc npm run test"
+    "cover": "nyc npm run test",
+    "release": "standard-version"
   },
   "repository": {
     "type": "git",
