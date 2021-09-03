@@ -22,12 +22,17 @@ function prepareAndSendToken (req, res, type, token, options, cb) {
     if (options.protocolBinding === BINDINGS.HTTP_POST) {
       // HTTP-POST
       res.set('Content-Type', 'text/html');
-      return res.send(templates.Form({
+      
+      var payload = {
         type:         type,
-        callback:     options.identityProviderUrl,
-        RelayState:   params.RelayState,
+        callback:     options.identityProviderUrl,        
         token:        params[type]
-      }));
+      };
+      if('RelayState' in params) {
+        payload.RelayState = params.RelayState;
+      }
+      
+      return res.send(templates.Form(payload));
     }
 
     // HTTP-Redirect
@@ -38,6 +43,10 @@ function prepareAndSendToken (req, res, type, token, options, cb) {
   var params = {};
   params[type] = null;
   params.RelayState = req.body.RelayState || req.query.RelayState || options.relayState || '';
+  if (params.RelayState === '') {
+    // if there is no RelayState value, the parameter should be omitted from the signature computation
+    delete params.RelayState;
+  }
 
   // canonical request
   token = trim_xml(token);
@@ -61,12 +70,7 @@ function prepareAndSendToken (req, res, type, token, options, cb) {
     params[type] = buffer.toString('base64');
 
     // construct the Signature: a string consisting of the concatenation of the SAMLResponse,
-    // RelayState (if present) and SigAlg query string parameters (each one URLencoded)
-    if (params.RelayState === '') {
-      // if there is no RelayState value, the parameter should be omitted from the signature computation
-      delete params.RelayState;
-    }
-
+    // RelayState (if present) and SigAlg query string parameters (each one URLencoded)    
     params.SigAlg = signers.getSigAlg(options);
 
     try {
