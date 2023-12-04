@@ -60,7 +60,9 @@ function prepareAndSendToken (req, res, type, token, options, cb) {
     }
 
     params[type] = new Buffer(token).toString('base64');
-    return send(params);
+    send(params);
+    cb();
+    return;
   }
 
   // Default: HTTP-Redirect with deflate encoding (http://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf - section 3.4.4.1)
@@ -80,6 +82,7 @@ function prepareAndSendToken (req, res, type, token, options, cb) {
     }
 
     send(params);
+    cb();
   });
 }
 
