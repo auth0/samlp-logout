@@ -53,7 +53,7 @@ describe('SAMLRequest - HTTP Redirect Binding', function () {
             done();
           });
         }
-      });
+      }, () => {});
     });
 
     it('should include RelayState', function () {

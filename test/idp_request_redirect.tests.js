@@ -170,6 +170,8 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
 
     describe('when request is valid', function () {
       var redirect, RelayState, SAMLResponse, SAMLResponseOriginal, SigAlg, Signature;
+      var nextCalled = false;
+      var next = () => { nextCalled = true; };
 
       before(function (done) {
         var query = deflateAndBase64AndSign({
@@ -196,7 +198,7 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
           }
         };
 
-        logout(req, res);
+        logout(req, res, next);
       });
 
       it('should redirect to idp endpoint', function () {
@@ -269,6 +271,10 @@ describe('IdP Initiated - SAMLRequest - HTTP Redirect Binding', function () {
           .getElementsByTagName('samlp:StatusCode')[0]
           .getAttribute('Value')).to.equal('urn:oasis:names:tc:SAML:2.0:status:Success');
       });
+
+      it ('should resume middleware chain', function () {
+        expect(nextCalled).to.equal(true);
+      })
     });
   });
 });
