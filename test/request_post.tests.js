@@ -48,7 +48,7 @@ describe('SAMLRequest - HTTP POST Binding', function () {
             contentType = value;
           }
         }
-      });
+      }, () => {});
     });
 
     it('should set Content-Type', function () {

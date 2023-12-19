@@ -176,6 +176,8 @@ describe('IdP Initiated - SAMLRequest - HTTP POST Binding', function () {
 
     describe('when request is valid', function () {
       var callback, RelayState, SAMLResponse, contentType;
+      var nextCalled = false;
+      var next = () => { nextCalled = true; };
 
       before(function (done) {
         var req = {
@@ -204,7 +206,7 @@ describe('IdP Initiated - SAMLRequest - HTTP POST Binding', function () {
           }
         };
 
-        logout(req, res);
+        logout(req, res, next);
       });
 
       it('should set Content-Type', function () {
@@ -284,6 +286,10 @@ describe('IdP Initiated - SAMLRequest - HTTP POST Binding', function () {
           .getElementsByTagName('samlp:StatusCode')[0]
           .getAttribute('Value')).to.equal('urn:oasis:names:tc:SAML:2.0:status:Success');
       });
+
+      it ('should resume middleware chain', function () {
+        expect(nextCalled).to.equal(true);
+      })
     });
   });
 });
