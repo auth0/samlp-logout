@@ -2,15 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [4.0.0](https://github.com/auth0/samlp-logout/compare/v3.1.3...v4.0.0) (2023-12-19)
-
-### [3.1.3](https://github.com/auth0/samlp-logout/compare/v3.1.2...v3.1.3) (2023-12-19)
-
-### [3.1.2](https://github.com/auth0/samlp-logout/compare/v3.1.1...v3.1.2) (2023-12-19)
-
-### [3.1.1](https://github.com/auth0/samlp-logout/compare/v3.1.0...v3.1.1) (2023-12-19)
-
-## [3.1.0](https://github.com/auth0/samlp-logout/compare/v3.1.0...v4.0.0) (2023-12-19)
+## [4.0.0](https://github.com/auth0/samlp-logout/compare/v3.1.0...v4.0.0) (2023-12-19)
 
 - Properly calling next() callback when using HTTP-POST bindings
 
